@@ -37,34 +37,7 @@
 
 ## 📐 아키텍처
 
-<!-- TODO: docs/images/architecture.png 로 교체 -->
-<!-- ![architecture](docs/images/architecture.png) -->
-
-```mermaid
-flowchart LR
-    subgraph WL["☁️ Workload 계정"]
-        ALB[ALB + WAF] --> WEB[DVWA 웹서버<br/>Wazuh Agent]
-        WEB -. Traffic Mirroring .-> SUR[Suricata]
-    end
-
-    subgraph SEC["🛡️ Security 계정"]
-        WM[Wazuh Manager]
-        SH[Security Hub]
-        EB[EventBridge] --> SF[Step Functions] --> LB[대응 Lambda]
-    end
-
-    subgraph MGMT["🏢 Management 계정"]
-        CT[Organization Trail]
-    end
-
-    WEB -- VPC Peering --> WM
-    SUR --> WM
-    CT --> S3[(S3)] --> WM
-    WM -- ASFF --> SH
-    GD[GuardDuty] --> SH
-    SH --> EB
-    LB --> OUT[격리 · 차단 · 알림 · 티켓]
-```
+<img src="docs/images/architecture.png" alt="전체 아키텍처" width="100%">
 
 ### 탐지 데이터 흐름
 
