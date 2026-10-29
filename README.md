@@ -56,7 +56,7 @@
 | 영역 | 한 일 | 결과물 |
 |---|---|---|
 | Security 계정 인프라 | public subnet(10.1.0.0/24)및 private subnet(10.1.10.0/24셋팅 | [`infra/security-account`](infra/security-account) |
-| CloudTrail 탐지 파이프라인 (Organization Trail ~ 탐지 룰) | <!-- TODO --> | [`detection/cloudtrail-pipeline`](detection/cloudtrail-pipeline) |
+| CloudTrail 탐지 파이프라인 (Organization Trail ~ 탐지 룰) | 조직트레일 생성 및 조직트레일->s3->Wazuh(aws-s3 모듈)설정 | [`detection/cloudtrail-pipeline`](detection/cloudtrail-pipeline) |
 | Wazuh → Security Hub 연동 | <!-- TODO --> | [`integration/wazuh-to-securityhub`](integration/wazuh-to-securityhub) |
 | IAM 권한상승 시나리오 | <!-- TODO --> | [`attack-sim/privesc`](attack-sim/privesc) |
 | R3 런북 · 사고 분석 | <!-- TODO --> | [`reports/`](reports) |
