@@ -37,7 +37,6 @@
 
 ## 📐 아키텍처
 
-![전체 아키텍처](docs/images/architecture.png)
   <img src="docs/images/architecture.png" width="800" alt="전체 아키텍처">
 
 ### 탐지 데이터 흐름
