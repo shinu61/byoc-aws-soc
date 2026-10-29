@@ -1,0 +1,29 @@
+# ── 원본 자료 (마스킹 전) — 절대 커밋 금지 ─────────────
+_raw/
+_private/
+*.tgz
+*.tar
+*.zip
+notion-export/
+
+# ── 자격증명 · 키 ─────────────────────────────
+*.pem
+*.key
+.env
+.env.*
+credentials
+*.tfvars
+!*.tfvars.example
+
+# ── Terraform 상태 (계정 ID · 리소스 정보 포함) ─────
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# ── 기타 ───────────────────────────────────
+.DS_Store
+Thumbs.db
+__pycache__/
+.vscode/
+.idea/
