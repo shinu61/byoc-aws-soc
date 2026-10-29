@@ -12,11 +12,15 @@ Organization Trail → S3 → Wazuh aws-s3 모듈 → 커스텀 룰 → Security
 
 <!-- TODO -->
 
-## 구성 (aws-s3 wodle 설정 · IAM 권한)
+## 1단계 · Organization Trail 구성
+
+<!-- TODO: 조직 Trail 생성, 대상 계정·리전, S3 저장 경로 -->
+
+## 2단계 · S3 → Wazuh 연동 (aws-s3 wodle 설정 · IAM 권한)
 
 <!-- TODO -->
 
-## 탐지 룰 100300 / 100301
+## 3단계 · 탐지 룰 100300 / 100301
 
 <!-- TODO -->
 

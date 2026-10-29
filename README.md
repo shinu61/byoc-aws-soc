@@ -56,8 +56,7 @@
 | 영역 | 한 일 | 결과물 |
 |---|---|---|
 | Security 계정 인프라 | <!-- TODO --> | [`infra/security-account`](infra/security-account) |
-| 조직 구성 | <!-- TODO --> | [`infra/organization`](infra/organization) |
-| CloudTrail 탐지 파이프라인 | <!-- TODO --> | [`detection/cloudtrail-pipeline`](detection/cloudtrail-pipeline) |
+| CloudTrail 탐지 파이프라인 (Organization Trail ~ 탐지 룰) | <!-- TODO --> | [`detection/cloudtrail-pipeline`](detection/cloudtrail-pipeline) |
 | Wazuh → Security Hub 연동 | <!-- TODO --> | [`integration/wazuh-to-securityhub`](integration/wazuh-to-securityhub) |
 | IAM 권한상승 시나리오 | <!-- TODO --> | [`attack-sim/privesc`](attack-sim/privesc) |
 | R3 런북 · 사고 분석 | <!-- TODO --> | [`reports/`](reports) |
@@ -113,11 +112,11 @@ byoc-aws-soc/
 ├── docs/                      설계 문서 · 다이어그램
 ├── infra/
 │   ├── security-account/      🙋 Security 계정 Terraform · VPC Peering
-│   └── organization/          🙋 Organization Trail · SCP · GuardDuty 위임
+│   └── organization/          계정 구조 · SCP · GuardDuty 위임 (팀)
 ├── detection/
 │   ├── wazuh/                 Wazuh 커스텀 룰 · 디코더
 │   ├── suricata/              Suricata 커스텀 룰
-│   └── cloudtrail-pipeline/   🙋 CloudTrail → S3 → Wazuh
+│   └── cloudtrail-pipeline/   🙋 Organization Trail → S3 → Wazuh
 ├── integration/
 │   └── wazuh-to-securityhub/  🙋 Wazuh alert → ASFF 변환기
 ├── response/
