@@ -1,0 +1,174 @@
+<!-- Local rules -->
+
+<!-- Modify it at your will. -->
+<!-- Copyright (C) 2015, Wazuh Inc. -->
+
+<!-- Example -->
+<group name="local,syslog,sshd,">
+
+  <!--
+  Dec 10 01:02:02 host sshd[1234]: Failed none for root from 1.1.1.1 port 1066 ssh2
+  -->
+  <rule id="100001" level="5">
+    <if_sid>5716</if_sid>
+    <srcip>1.1.1.1</srcip>
+    <description>sshd: authentication failed from IP 1.1.1.1.</description>
+    <group>authentication_failed,pci_dss_10.2.4,pci_dss_10.2.5,</group>
+  </rule>
+
+</group>
+
+<group name="syscheck,dvwa_fim,">
+
+  <rule id="100110" level="12">
+    <if_sid>554</if_sid>
+    <field name="tag">dvwa_webroot</field>
+    <field name="file" type="pcre2">(?i)\.php$</field>
+    <description>[HIGH][DVWA] New PHP file created: $(file)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+  </rule>
+
+  <rule id="100111" level="12">
+    <if_sid>550</if_sid>
+    <field name="tag">dvwa_webroot</field>
+    <field name="file" type="pcre2">(?i)\.php$</field>
+    <description>[HIGH][DVWA] PHP file modified: $(file)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+  </rule>
+
+  <rule id="100112" level="14">
+    <if_sid>100111</if_sid>
+    <field name="changed_content" type="pcre2">(?i)shell_exec|passthru|system|eval</field>
+    <description>[CRITICAL][DVWA] Suspicious PHP modification detected: $(file)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+  </rule>
+
+</group>
+
+<group name="audit,">
+  <rule id="100210" level="6">
+    <if_sid>80792</if_sid>
+
+    <field name="audit.euid" type="pcre2">^0$</field>
+    <field name="audit.tty" type="pcre2">^pts[0-9]+$</field>
+
+    <list field="audit.command"
+          lookup="match_key_value"
+          check_value="high">etc/lists/suspicious-programs</list>
+
+    <description>
+      Audit: Suspicious command executed with root privileges from interactive terminal: $(audit.exe)
+    </description>
+    <mitre>
+    <id>T1059.004</id>
+    </mitre>
+
+    <group>audit_command,privilege_escalation,</group>
+  </rule>
+</group>
+
+<group name="suricata,">
+  <rule id="100113" level="6">
+    <if_sid>86601</if_sid>
+    <field name="alert.signature_id">^1000001$</field>
+    <description>Suricata PortScan Detection : $(alert.signature) ($(src_ip) → $(dest_ip))</description>
+    <mitre>
+      <id>T1046</id>
+    </mitre>
+  </rule>
+</group>
+
+<group name="web,attack,">
+
+  <!-- 동일 IP가 60초 내 SQLi(31164) 8회 이상 → HIGH(12) 격상 -->
+  <rule id="100120" level="12" frequency="8" timeframe="60">
+    <if_matched_sid>31164</if_matched_sid>
+    <same_source_ip />
+    <description>[HIGH][DVWA] Multiple SQL injection attempts from same source IP: $(srcip)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>attack,sqlinjection,</group>
+  </rule>
+
+</group>
+
+<group name="suricata,">
+  <rule id="100114" level="10">
+    <if_sid>86601</if_sid>
+    <field name="alert.signature_id" type="pcre2">^1000002$</field>
+    <description>Suricata Possible TCP SYN Flood: $(alert.signature) ($(src_ip) -> $(dest_ip))</description>
+    <mitre>
+      <id>T1499.001</id>
+    </mitre>
+  </rule>
+</group>
+
+<group name="audit,webshell_exec,">
+  <rule id="100220" level="14">
+    <if_sid>80792</if_sid>
+
+    <field name="audit.euid" type="pcre2">^33$</field>
+
+    <field name="audit.command" type="pcre2">^bash$</field>
+
+    <description>[CRITICAL][DVWA] Web process executed shell: $(audit.exe)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>audit_command,webshell_execution,</group>
+  </rule>
+</group>
+
+<group name="aws,privilege_escalation,">
+
+  <rule id="100300" level="10">
+    <if_sid>80200</if_sid>
+    <field name="aws.source">cloudtrail</field>
+    <field name="aws.eventSource">lambda.amazonaws.com</field>
+    <field name="aws.eventName" type="pcre2">^CreateFunction</field>
+    <field name="aws.userIdentity.arn" type="pcre2">assumed-role/.+/i-</field>
+    <description>[HIGH][AWS] EC2 instance role created a Lambda function (privilege escalation attempt): $(aws.userIdentity.arn)</description>
+    <mitre>
+      <id>T1548</id>
+    </mitre>
+    <group>privilege_escalation,</group>
+  </rule>
+
+  <rule id="100301" level="13">
+    <if_sid>100300</if_sid>
+    <field name="aws.requestParameters.role" type="pcre2">(?i)(escalated|admin)</field>
+    <description>[CRITICAL][AWS] Privilege escalation: instance role passed privileged role to Lambda: $(aws.requestParameters.role)</description>
+    <mitre>
+      <id>T1548</id>
+    </mitre>
+    <group>privilege_escalation,</group>
+  </rule>
+
+</group>
+<group name="suricata,ids,attack,">
+  <rule id="100130" level="12">
+    <if_sid>86601</if_sid>
+    <field name="alert.signature_id">^1000003$</field>
+    <description>[HIGH][R2][DVWA] SQL injection confirmed (DB error disclosure) from $(http.xff)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>attack,sqlinjection,web,</group>
+  </rule>
+  <rule id="100131" level="13">
+    <if_sid>86601</if_sid>
+    <field name="alert.signature_id">^1000004$</field>
+    <description>[CRITICAL][R2][DVWA] SQL injection data exfiltration (credential data in response) from $(http.xff)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>attack,sqlinjection,web,</group>
+  </rule>
+</group>

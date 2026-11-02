@@ -1,0 +1,1973 @@
+{
+  "Comment": "SOC finding triage: preserve existing R1/R2/R3/R4 HIGH/R5/R7 response routes; R4 CRITICAL EC2 AttackSequence selectively isolates manually approved instances.",
+  "StartAt": "NormalizeFinding",
+  "States": {
+    "NormalizeFinding": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:socing-securityhub-finding-parser",
+        "Payload.$": "$"
+      },
+      "OutputPath": "$.Payload",
+      "Next": "RouteEnrichment"
+    },
+    "RouteEnrichment": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.resource_type",
+          "StringEquals": "AwsIamAccessKey",
+          "Next": "EnrichIAM"
+        },
+        {
+          "Variable": "$.resource_type",
+          "StringEquals": "AwsEc2Instance",
+          "Next": "EnrichContext"
+        }
+      ],
+      "Default": "SkipEnrichment"
+    },
+    "EnrichIAM": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:securityhub-enrich-iam",
+        "Payload.$": "$"
+      },
+      "OutputPath": "$.Payload",
+      "Next": "RouteRunbook"
+    },
+    "EnrichContext": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:socing-securityhub-enrich-ec2",
+        "Payload.$": "$"
+      },
+      "OutputPath": "$.Payload",
+      "Next": "RouteRunbook"
+    },
+    "SkipEnrichment": {
+      "Type": "Pass",
+      "Next": "RouteRunbook"
+    },
+    "RouteRunbook": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.severity",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.severity",
+              "IsString": true
+            },
+            {
+              "Or": [
+                {
+                  "Variable": "$.severity",
+                  "StringEquals": "MEDIUM"
+                },
+                {
+                  "Variable": "$.severity",
+                  "StringEquals": "LOW"
+                },
+                {
+                  "Variable": "$.severity",
+                  "StringEquals": "INFORMATIONAL"
+                }
+              ]
+            }
+          ],
+          "Next": "SetR1"
+        },
+        {
+          "Not": {
+            "And": [
+              {
+                "Variable": "$.severity",
+                "IsPresent": true
+              },
+              {
+                "Variable": "$.severity",
+                "IsString": true
+              },
+              {
+                "Or": [
+                  {
+                    "Variable": "$.severity",
+                    "StringEquals": "MEDIUM"
+                  },
+                  {
+                    "Variable": "$.severity",
+                    "StringEquals": "LOW"
+                  },
+                  {
+                    "Variable": "$.severity",
+                    "StringEquals": "INFORMATIONAL"
+                  },
+                  {
+                    "Variable": "$.severity",
+                    "StringEquals": "HIGH"
+                  },
+                  {
+                    "Variable": "$.severity",
+                    "StringEquals": "CRITICAL"
+                  }
+                ]
+              }
+            ]
+          },
+          "Next": "InvalidSeverity_R1"
+        },
+        {
+          "Next": "SetR4",
+          "Or": [
+            {
+              "And": [
+                {
+                  "And": [
+                    {
+                      "Variable": "$.product",
+                      "StringEquals": "GuardDuty"
+                    },
+                    {
+                      "Variable": "$.severity",
+                      "StringEquals": "CRITICAL"
+                    },
+                    {
+                      "Variable": "$.finding_type",
+                      "IsPresent": true
+                    },
+                    {
+                      "Variable": "$.finding_type",
+                      "IsString": true
+                    },
+                    {
+                      "Variable": "$.finding_type",
+                      "StringMatches": "*AttackSequence:EC2/CompromisedInstanceGroup"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.finding_type",
+                  "StringEquals": "Effects/Denial of Service/Wazuh-Rule100114"
+                },
+                {
+                  "Variable": "$.severity",
+                  "StringEquals": "HIGH"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.finding_type",
+                  "StringEquals": "TTPs/Persistence/Wazuh-Rule100111"
+                },
+                {
+                  "Variable": "$.severity",
+                  "StringEquals": "HIGH"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "Variable": "$.resource_type",
+          "StringEquals": "AwsIamAccessKey",
+          "Next": "SetR3"
+        },
+        {
+          "Variable": "$.category",
+          "StringEquals": "Credential Access",
+          "Next": "SetR3"
+        },
+        {
+          "Or": [
+            {
+              "Variable": "$.category",
+              "StringEquals": "Command and Control"
+            },
+            {
+              "Variable": "$.finding_type",
+              "StringEquals": "UnauthorizedAccess:EC2/TorClient"
+            },
+            {
+              "Variable": "$.finding_type",
+              "StringEquals": "Effects/Resource Consumption/UnauthorizedAccess:EC2-TorClient"
+            },
+            {
+              "Variable": "$.finding_type",
+              "StringEquals": "CryptoCurrency:EC2/BitcoinTool.B"
+            }
+          ],
+          "Next": "SetR4"
+        },
+        {
+          "Variable": "$.category",
+          "StringEquals": "Initial Access",
+          "Next": "SetR2"
+        },
+        {
+          "Variable": "$.category",
+          "StringEquals": "Reconnaissance",
+          "Next": "SetR2"
+        },
+        {
+          "Or": [
+            {
+              "Variable": "$.category",
+              "StringEquals": "Exfiltration"
+            },
+            {
+              "Variable": "$.category",
+              "StringEquals": "Impact"
+            }
+          ],
+          "Next": "SetR5"
+        }
+      ],
+      "Default": "SetR7"
+    },
+    "SetR1": {
+      "Type": "Pass",
+      "Comment": "Entry for common R1 lower-severity management. Forward the complete finding unchanged.",
+      "Next": "RouteSeverity_R1"
+    },
+    "RouteSeverity_R1": {
+      "Type": "Choice",
+      "Comment": "MEDIUM uses the existing Jira ticket task; LOW and INFORMATIONAL use existing records and manual summary disposition.",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.severity",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.severity",
+              "IsString": true
+            },
+            {
+              "Variable": "$.severity",
+              "StringEquals": "MEDIUM"
+            }
+          ],
+          "Next": "CreateJiraTicket_R1"
+        },
+        {
+          "And": [
+            {
+              "Variable": "$.severity",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.severity",
+              "IsString": true
+            },
+            {
+              "Or": [
+                {
+                  "Variable": "$.severity",
+                  "StringEquals": "LOW"
+                },
+                {
+                  "Variable": "$.severity",
+                  "StringEquals": "INFORMATIONAL"
+                }
+              ]
+            }
+          ],
+          "Next": "SetLowInfoDisposition_R1"
+        }
+      ],
+      "Default": "InvalidSeverity_R1"
+    },
+    "CreateJiraTicket_R1": {
+      "Type": "Task",
+      "Comment": "Common MEDIUM Jira review before runbook classification; R1 Lambda defaults a missing runbook_id to R1. Preserve the full normalized finding.",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:soc-r1-jira-ticket",
+        "Payload.$": "$"
+      },
+      "ResultSelector": {
+        "result.$": "$.Payload"
+      },
+      "ResultPath": "$.r1_ticket",
+      "TimeoutSeconds": 90,
+      "Next": "NotifyMediumDiscord_R1"
+    },
+    "SetLowInfoDisposition_R1": {
+      "Type": "Pass",
+      "Comment": "Use existing Security Hub/Wazuh records and manual daily summary. This Pass does not persist a new SIEM record or send a summary.",
+      "Result": {
+        "processing_route": "R1",
+        "policy": "EXISTING_RECORDS_AND_MANUAL_SUMMARY",
+        "manual_summary_required": true,
+        "ticket_created": false,
+        "action_performed": false
+      },
+      "ResultPath": "$.r1_management",
+      "End": true
+    },
+    "InvalidSeverity_R1": {
+      "Type": "Fail",
+      "Error": "UnsupportedFindingSeverity",
+      "Cause": "Normalized severity must be MEDIUM, LOW, INFORMATIONAL, HIGH, or CRITICAL. Inspect the normalized finding before routing to a response runbook."
+    },
+    "SetR2": {
+      "Type": "Pass",
+      "Comment": "R2 - Initial Access / Reconnaissance",
+      "Result": "R2",
+      "ResultPath": "$.runbook_id",
+      "Next": "RouteSeverity_R2"
+    },
+    "RouteSeverity_R2": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.severity",
+          "StringEquals": "CRITICAL",
+          "Next": "SetCriticalRoute_R2"
+        },
+        {
+          "Variable": "$.severity",
+          "StringEquals": "HIGH",
+          "Next": "SetHighRoute_R2"
+        }
+      ],
+      "Default": "SetNoDiscordRoute_R2"
+    },
+    "SetCriticalRoute_R2": {
+      "Type": "Pass",
+      "Result": "DISCORD_CRITICAL",
+      "ResultPath": "$.severity_route",
+      "Next": "DedupCheck_R2_Critical"
+    },
+    "DedupCheck_R2_Critical": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R2-Alert-Dedup",
+        "Payload": {
+          "source_ip.$": "$.source_ip",
+          "runbook_id": "R2-CRITICAL"
+        }
+      },
+      "ResultSelector": {
+        "duplicate.$": "$.Payload.duplicate"
+      },
+      "ResultPath": "$.dedup",
+      "Next": "DedupChoice_R2_Critical"
+    },
+    "DedupChoice_R2_Critical": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.dedup.duplicate",
+          "BooleanEquals": true,
+          "Next": "Deduplicated_R2"
+        }
+      ],
+      "Default": "R2BlockIP_Critical"
+    },
+    "R2BlockIP_Critical": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R2-WAF-Block",
+        "Payload.$": "$"
+      },
+      "ResultSelector": {
+        "blocked.$": "$.Payload.blocked",
+        "ip.$": "$.Payload.ip"
+      },
+      "ResultPath": "$.block_result",
+      "Next": "NotifyCriticalDiscord",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.block_error",
+          "Next": "NotifyCriticalDiscord"
+        }
+      ]
+    },
+    "SetHighRoute_R2": {
+      "Type": "Pass",
+      "Result": "DISCORD_HIGH",
+      "ResultPath": "$.severity_route",
+      "Next": "RouteHighApproval_R2"
+    },
+    "SetNoDiscordRoute_R2": {
+      "Type": "Pass",
+      "Result": "NO_DISCORD",
+      "ResultPath": "$.severity_route",
+      "End": true
+    },
+    "RouteHighApproval_R2": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.record_state",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.record_state",
+              "StringEquals": "ACTIVE"
+            },
+            {
+              "Variable": "$.workflow_status",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.workflow_status",
+              "StringEquals": "NEW"
+            }
+          ],
+          "Next": "DedupCheck_R2"
+        }
+      ],
+      "Default": "SetNoDiscordRoute_R2"
+    },
+    "DedupCheck_R2": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R2-Alert-Dedup",
+        "Payload": {
+          "source_ip.$": "$.source_ip",
+          "runbook_id.$": "States.Format('R2-{}', $.details.rule_id)"
+        }
+      },
+      "ResultSelector": {
+        "duplicate.$": "$.Payload.duplicate"
+      },
+      "ResultPath": "$.dedup",
+      "Next": "DedupChoice_R2"
+    },
+    "DedupChoice_R2": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.dedup.duplicate",
+          "BooleanEquals": true,
+          "Next": "Deduplicated_R2"
+        }
+      ],
+      "Default": "NotifyDiscordAndWaitApproval_R2"
+    },
+    "Deduplicated_R2": {
+      "Type": "Pass",
+      "End": true
+    },
+    "NotifyDiscordAndWaitApproval_R2": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:king_all",
+        "Payload": {
+          "finding.$": "$",
+          "taskToken.$": "$$.Task.Token",
+          "executionArn.$": "$$.Execution.Id",
+          "approvalTimeoutSeconds": 900
+        }
+      },
+      "TimeoutSeconds": 900,
+      "ResultPath": "$.approval",
+      "Next": "ApprovalReceived_R2",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.Timeout"
+          ],
+          "ResultPath": "$.approval_wait_error",
+          "Next": "ApprovalTimedOut_R2"
+        },
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.approval_wait_error",
+          "Next": "ApprovalNotificationFailed_R2"
+        }
+      ]
+    },
+    "ApprovalReceived_R2": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.approval.decision",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.approval.decision",
+              "StringEquals": "APPROVED"
+            }
+          ],
+          "Next": "evidence_collector (2)"
+        }
+      ],
+      "Default": "ApprovalDismissed_R2"
+    },
+    "evidence_collector (2)": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:soc-evidence-collector:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "ResultPath": null,
+      "Next": "R2BlockIP"
+    },
+    "R2BlockIP": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R2-WAF-Block",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.block_result",
+      "End": true
+    },
+    "ApprovalDismissed_R2": {
+      "Type": "Pass",
+      "End": true
+    },
+    "ApprovalTimedOut_R2": {
+      "Type": "Pass",
+      "Result": {
+        "decision": "TIMED_OUT",
+        "action_performed": false
+      },
+      "ResultPath": "$.approval",
+      "End": true
+    },
+    "ApprovalNotificationFailed_R2": {
+      "Type": "Fail",
+      "Error": "ApprovalNotificationFailed",
+      "Cause": "Approval notification task failed; inspect approval_wait_error in execution history."
+    },
+    "SetR3": {
+      "Type": "Pass",
+      "Comment": "R3 - IAM Access Key / Credential Access",
+      "Result": "R3",
+      "ResultPath": "$.runbook_id",
+      "Next": "RouteSeverity_R3"
+    },
+    "RouteSeverity_R3": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.severity",
+          "StringEquals": "CRITICAL",
+          "Next": "SetCriticalRoute_R3"
+        },
+        {
+          "Variable": "$.severity",
+          "StringEquals": "HIGH",
+          "Next": "SetHighRoute_R3"
+        }
+      ],
+      "Default": "SetNoDiscordRoute_R3"
+    },
+    "SetCriticalRoute_R3": {
+      "Type": "Pass",
+      "Result": "DISCORD_CRITICAL",
+      "ResultPath": "$.severity_route",
+      "Next": "R3_Critical_Discord"
+    },
+    "R3_Critical_Discord": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:r3_critical_approval:$LATEST",
+        "Payload": {
+          "finding.$": "$",
+          "taskToken.$": "$$.Task.Token",
+          "executionArn.$": "$$.Execution.Id",
+          "approvalTimeoutSeconds": 900
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "ResultPath": "$.approval",
+      "Next": "is_approve_r3_critical"
+    },
+    "is_approve_r3_critical": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Next": "R3_Critical_evidence_collector",
+          "Variable": "$.approval.decision",
+          "StringEquals": "APPROVED"
+        }
+      ]
+    },
+    "R3_Critical_evidence_collector": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:soc-evidence-collector:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "ResultPath": null,
+      "Next": "R3 Critical Respond"
+    },
+    "R3 Critical Respond": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:r3_critical_respond:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "End": true
+    },
+    "SetHighRoute_R3": {
+      "Type": "Pass",
+      "Result": "DISCORD_HIGH",
+      "ResultPath": "$.severity_route",
+      "Next": "NotifyDiscord_R3"
+    },
+    "NotifyDiscord_R3": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:king_all",
+        "Payload": {
+          "finding.$": "$",
+          "taskToken.$": "$$.Task.Token",
+          "executionArn.$": "$$.Execution.Id",
+          "approvalTimeoutSeconds": 900
+        }
+      },
+      "Next": "is_approve_r3_high",
+      "ResultPath": "$.approval"
+    },
+    "is_approve_r3_high": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Next": "evidence_collector",
+          "Variable": "$.approval.decision",
+          "StringEquals": "APPROVED"
+        }
+      ]
+    },
+    "evidence_collector": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:soc-evidence-collector:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "ResultPath": null,
+      "Next": "R3 HIGH Respond"
+    },
+    "R3 HIGH Respond": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R3-high-Respond:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "End": true
+    },
+    "SetNoDiscordRoute_R3": {
+      "Type": "Pass",
+      "Result": "NO_DISCORD",
+      "ResultPath": "$.severity_route",
+      "End": true
+    },
+    "SetR4": {
+      "Type": "Pass",
+      "Comment": "R4 - Command and Control / Tor client / BitcoinTool.B / GuardDuty EC2 CompromisedInstanceGroup AttackSequence",
+      "Result": "R4",
+      "ResultPath": "$.runbook_id",
+      "Next": "RouteSeverity_R4"
+    },
+    "RouteSeverity_R4": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.severity",
+          "StringEquals": "CRITICAL",
+          "Next": "SetCriticalRoute_R4"
+        },
+        {
+          "Variable": "$.severity",
+          "StringEquals": "HIGH",
+          "Next": "SetHighRoute_R4"
+        }
+      ],
+      "Default": "SetNoDiscordRoute_R4"
+    },
+    "SetCriticalRoute_R4": {
+      "Type": "Pass",
+      "Result": "DISCORD_CRITICAL",
+      "ResultPath": "$.severity_route",
+      "Next": "RouteR4CriticalApprovalEligibility",
+      "Comment": "Route supported GuardDuty EC2 AttackSequence findings to dedicated human-approved multi-instance response; all other R4 CRITICAL findings remain notification-only."
+    },
+    "SetHighRoute_R4": {
+      "Type": "Pass",
+      "Result": "DISCORD_HIGH",
+      "ResultPath": "$.severity_route",
+      "Next": "RouteHighApproval_R4"
+    },
+    "SetNoDiscordRoute_R4": {
+      "Type": "Pass",
+      "Result": "NO_DISCORD",
+      "ResultPath": "$.severity_route",
+      "End": true
+    },
+    "RouteHighApproval_R4": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.record_state",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.record_state",
+              "StringEquals": "ACTIVE"
+            },
+            {
+              "Variable": "$.workflow_status",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.workflow_status",
+              "StringEquals": "NEW"
+            }
+          ],
+          "Next": "NotifyDiscordAndWaitApproval_R4"
+        }
+      ],
+      "Default": "NotifyDiscord_R4"
+    },
+    "NotifyDiscord_R4": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:king_all",
+        "Payload.$": "$"
+      },
+      "End": true
+    },
+    "NotifyDiscordAndWaitApproval_R4": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:king_all",
+        "Payload": {
+          "finding.$": "$",
+          "taskToken.$": "$$.Task.Token",
+          "executionArn.$": "$$.Execution.Id",
+          "approvalTimeoutSeconds": 900
+        }
+      },
+      "TimeoutSeconds": 900,
+      "ResultPath": "$.approval",
+      "Next": "ApprovalReceived_R4",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.Timeout"
+          ],
+          "ResultPath": "$.approval_wait_error",
+          "Next": "ApprovalTimedOut_R4"
+        },
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.approval_wait_error",
+          "Next": "ApprovalNotificationFailed_R4"
+        }
+      ]
+    },
+    "ApprovalReceived_R4": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.approval.decision",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.approval.decision",
+              "StringEquals": "APPROVED"
+            }
+          ],
+          "Next": "Choice"
+        },
+        {
+          "And": [
+            {
+              "Variable": "$.approval.decision",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.approval.decision",
+              "StringEquals": "BENIGN"
+            }
+          ],
+          "Next": "R4Benign"
+        },
+        {
+          "And": [
+            {
+              "Variable": "$.approval.decision",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.approval.decision",
+              "StringEquals": "FALSE_POSITIVE"
+            }
+          ],
+          "Next": "R4FalsePositive"
+        }
+      ],
+      "Default": "ApprovalDismissed_R4"
+    },
+    "Choice": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Next": "evidence_collector (1)",
+          "And": [
+            {
+              "Variable": "$.finding_type",
+              "StringEquals": "TTPs/Persistence/Wazuh-Rule100111"
+            },
+            {
+              "Variable": "$.severity",
+              "StringEquals": "HIGH"
+            }
+          ],
+          "Comment": "is_Web_Shell"
+        },
+        {
+          "Comment": "is_TCP_DOS",
+          "Next": "evidence_collector (6)",
+          "And": [
+            {
+              "Variable": "$.finding_type",
+              "StringEquals": "Effects/Denial of Service/Wazuh-Rule100114"
+            },
+            {
+              "Variable": "$.severity",
+              "StringEquals": "HIGH"
+            }
+          ]
+        }
+      ],
+      "Default": "evidence_collector (5)"
+    },
+    "evidence_collector (6)": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:soc-evidence-collector:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "ResultPath": null,
+      "Next": "TCP_Respond"
+    },
+    "evidence_collector (1)": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:soc-evidence-collector:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "ResultPath": null,
+      "Next": "web-shell-high-respond"
+    },
+    "web-shell-high-respond": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:r4-web-shell-high:$LATEST",
+        "Payload": {
+          "instance_id.$": "$.instance_id",
+          "source_ip.$": "$.source_ip",
+          "account_id.$": "$.details.resource_account_id",
+          "region.$": "$.region",
+          "finding_id.$": "$.finding_id"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "ResultPath": null,
+      "End": true
+    },
+    "TCP_Respond": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response:$LATEST",
+        "Payload.$": "$"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "ResultPath": null,
+      "End": true
+    },
+    "evidence_collector (5)": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:soc-evidence-collector:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Next": "R4IsolateEC2",
+      "ResultPath": null
+    },
+    "R4IsolateEC2": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R4_Lambda_Function",
+        "Payload.$": "$"
+      },
+      "OutputPath": "$.Payload",
+      "End": true
+    },
+    "R4Benign": {
+      "Type": "Pass",
+      "Result": {
+        "decision": "BENIGN",
+        "action_performed": false,
+        "reason": "NORMAL_BEHAVIOR"
+      },
+      "ResultPath": "$.r4_disposition",
+      "End": true
+    },
+    "R4FalsePositive": {
+      "Type": "Pass",
+      "Result": {
+        "decision": "FALSE_POSITIVE",
+        "action_performed": false,
+        "reason": "FALSE_POSITIVE"
+      },
+      "ResultPath": "$.r4_disposition",
+      "End": true
+    },
+    "ApprovalDismissed_R4": {
+      "Type": "Pass",
+      "End": true
+    },
+    "ApprovalTimedOut_R4": {
+      "Type": "Pass",
+      "Result": {
+        "decision": "TIMED_OUT",
+        "action_performed": false
+      },
+      "ResultPath": "$.approval",
+      "End": true
+    },
+    "ApprovalNotificationFailed_R4": {
+      "Type": "Fail",
+      "Error": "ApprovalNotificationFailed",
+      "Cause": "Approval notification task failed; inspect approval_wait_error in execution history."
+    },
+    "SetR5": {
+      "Type": "Pass",
+      "Comment": "R5 - Exfiltration / Impact",
+      "Result": "R5",
+      "ResultPath": "$.runbook_id",
+      "Next": "RouteSeverity_R5"
+    },
+    "RouteSeverity_R5": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.severity",
+          "StringEquals": "CRITICAL",
+          "Next": "SetCriticalRoute_R5"
+        },
+        {
+          "Variable": "$.severity",
+          "StringEquals": "HIGH",
+          "Next": "SetHighRoute_R5"
+        }
+      ],
+      "Default": "SetNoDiscordRoute_R5"
+    },
+    "SetCriticalRoute_R5": {
+      "Type": "Pass",
+      "Result": "DISCORD_CRITICAL",
+      "ResultPath": "$.severity_route",
+      "Next": "NotifyCriticalDiscord"
+    },
+    "SetHighRoute_R5": {
+      "Type": "Pass",
+      "Result": "DISCORD_HIGH",
+      "ResultPath": "$.severity_route",
+      "Next": "RouteHighApproval_R5"
+    },
+    "RouteHighApproval_R5": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.record_state",
+              "StringEquals": "ACTIVE"
+            },
+            {
+              "Variable": "$.workflow_status",
+              "StringEquals": "NEW"
+            }
+          ],
+          "Next": "NotifyDiscordAndWaitApproval_R5"
+        }
+      ],
+      "Default": "NotifyDiscord_R5"
+    },
+    "NotifyDiscordAndWaitApproval_R5": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:king_all",
+        "Payload": {
+          "finding.$": "$",
+          "taskToken.$": "$$.Task.Token",
+          "executionArn.$": "$$.Execution.Id",
+          "approvalTimeoutSeconds": 900
+        }
+      },
+      "TimeoutSeconds": 900,
+      "ResultPath": "$.approval",
+      "Next": "evidence_collector (3)",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.Timeout"
+          ],
+          "ResultPath": "$.approval_wait_error",
+          "Next": "ApprovalTimedOut_R5"
+        },
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.approval_wait_error",
+          "Next": "ApprovalNotificationFailed_R5"
+        }
+      ]
+    },
+    "evidence_collector (3)": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:soc-evidence-collector:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "ResultPath": null,
+      "Next": "ApprovalReceived_R5"
+    },
+    "ApprovalReceived_R5": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.approval.decision",
+          "StringEquals": "APPROVED",
+          "Next": "R5IsolationApproved"
+        },
+        {
+          "Or": [
+            {
+              "Variable": "$.approval.decision",
+              "StringEquals": "BENIGN"
+            },
+            {
+              "Variable": "$.approval.decision",
+              "StringEquals": "ALLOWED_ACTIVITY"
+            }
+          ],
+          "Next": "R5Benign"
+        },
+        {
+          "Variable": "$.approval.decision",
+          "StringEquals": "FALSE_POSITIVE",
+          "Next": "R5FalsePositive"
+        }
+      ],
+      "Default": "R5ApprovalDismissed"
+    },
+    "R5IsolationApproved": {
+      "Type": "Pass",
+      "Result": {
+        "decision": "APPROVED",
+        "action_performed": false,
+        "reason": "ISOLATION_NOT_CONNECTED"
+      },
+      "ResultPath": "$.r5_disposition",
+      "End": true
+    },
+    "R5Benign": {
+      "Type": "Pass",
+      "Result": {
+        "decision": "BENIGN",
+        "action_performed": false,
+        "reason": "NORMAL_BEHAVIOR"
+      },
+      "ResultPath": "$.r5_disposition",
+      "End": true
+    },
+    "R5FalsePositive": {
+      "Type": "Pass",
+      "Result": {
+        "decision": "FALSE_POSITIVE",
+        "action_performed": false,
+        "reason": "FALSE_POSITIVE"
+      },
+      "ResultPath": "$.r5_disposition",
+      "End": true
+    },
+    "R5ApprovalDismissed": {
+      "Type": "Pass",
+      "Result": {
+        "decision": "UNKNOWN",
+        "action_performed": false
+      },
+      "ResultPath": "$.r5_disposition",
+      "End": true
+    },
+    "ApprovalTimedOut_R5": {
+      "Type": "Pass",
+      "Result": {
+        "decision": "TIMED_OUT",
+        "action_performed": false
+      },
+      "ResultPath": "$.approval",
+      "End": true
+    },
+    "ApprovalNotificationFailed_R5": {
+      "Type": "Fail",
+      "Error": "ApprovalNotificationFailed",
+      "Cause": "R5 approval notification task failed; inspect approval_wait_error in execution history."
+    },
+    "NotifyDiscord_R5": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:king_all",
+        "Payload.$": "$"
+      },
+      "End": true
+    },
+    "SetNoDiscordRoute_R5": {
+      "Type": "Pass",
+      "Result": "NO_DISCORD",
+      "ResultPath": "$.severity_route",
+      "End": true
+    },
+    "SetR7": {
+      "Type": "Pass",
+      "Comment": "R7 - Unclassified / new finding types (Default)",
+      "Result": "R7",
+      "ResultPath": "$.runbook_id",
+      "Next": "RouteCriticalNotification_R7"
+    },
+    "NotifyDiscord_R7": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:king_all:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "ResultPath": null,
+      "Next": "RouteSeverity_R7"
+    },
+    "RouteSeverity_R7": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.severity",
+          "StringEquals": "CRITICAL",
+          "Next": "Critical_R7"
+        },
+        {
+          "Variable": "$.severity",
+          "StringEquals": "HIGH",
+          "Next": "evidence_collector (4)"
+        }
+      ],
+      "Default": "Other_R7"
+    },
+    "evidence_collector (4)": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:soc-evidence-collector:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "ResultPath": null,
+      "Next": "High_R7"
+    },
+    "Critical_R7": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-Webshell-Critical-Response"
+      },
+      "OutputPath": "$.Payload",
+      "End": true
+    },
+    "High_R7": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-Webshell-High-Response"
+      },
+      "OutputPath": "$.Payload",
+      "End": true
+    },
+    "Other_R7": {
+      "Type": "Pass",
+      "End": true
+    },
+    "NotifyMediumDiscord_R1": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:king_all",
+        "Payload.$": "$"
+      },
+      "ResultSelector": {
+        "result.$": "$.Payload"
+      },
+      "TimeoutSeconds": 30,
+      "End": true,
+      "ResultPath": "$.r1_notification",
+      "Comment": "Notify a confirmed Jira ticket in the MEDIUM channel; SKIPPED produces no message. Jira mapping remains intact if Discord fails."
+    },
+    "RouteCriticalNotification_R7": {
+      "Type": "Choice",
+      "Comment": "Send CRITICAL through king_all once; preserve the existing R7 HIGH notification flow.",
+      "Choices": [
+        {
+          "Variable": "$.severity",
+          "StringEquals": "CRITICAL",
+          "Next": "Critical_R7"
+        }
+      ],
+      "Default": "NotifyDiscord_R7"
+    },
+    "NotifyCriticalDiscord": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:king_all",
+        "Payload.$": "$"
+      },
+      "ResultSelector": {
+        "result.$": "$.Payload"
+      },
+      "TimeoutSeconds": 30,
+      "ResultPath": "$.critical_notification",
+      "Comment": "CRITICAL detection notice only. Owners can later connect their response Task before this notice, preserving the common finding via ResultPath.",
+      "End": true
+    },
+    "RouteR4CriticalApprovalEligibility": {
+      "Type": "Choice",
+      "Comment": "Only active, new, non-sample GuardDuty AttackSequence:EC2/CompromisedInstanceGroup findings enter the R4 selective isolation approval workflow. Keep all other R4 critical findings notification-only.",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.product",
+              "StringEquals": "GuardDuty"
+            },
+            {
+              "Variable": "$.severity",
+              "StringEquals": "CRITICAL"
+            },
+            {
+              "Variable": "$.finding_type",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.finding_type",
+              "IsString": true
+            },
+            {
+              "Variable": "$.finding_type",
+              "StringMatches": "*AttackSequence:EC2/CompromisedInstanceGroup"
+            },
+            {
+              "Variable": "$.record_state",
+              "StringEquals": "ACTIVE"
+            },
+            {
+              "Variable": "$.workflow_status",
+              "StringEquals": "NEW"
+            },
+            {
+              "Not": {
+                "Variable": "$.sample",
+                "BooleanEquals": true
+              }
+            }
+          ],
+          "Next": "RouteR4CriticalCandidatesPresent"
+        },
+        {
+          "Next": "r4-webshell-critical-discord",
+          "And": [
+            {
+              "Variable": "$.finding_type",
+              "StringEquals": "TTPs/Persistence/Wazuh-Rule100220"
+            },
+            {
+              "Variable": "$.severity",
+              "StringEquals": "CRITICAL"
+            }
+          ]
+        }
+      ],
+      "Default": "NotifyCriticalDiscord"
+    },
+    "r4-webshell-critical-discord": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {
+        "Payload": {
+          "finding.$": "$",
+          "taskToken.$": "$$.Task.Token",
+          "executionArn.$": "$$.Execution.Id",
+          "approvalTimeoutSeconds": 900
+        },
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:r3-webshell-critical-discord:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Next": "evidence_collector (7)",
+      "ResultPath": "$.approval"
+    },
+    "evidence_collector (7)": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:soc-evidence-collector:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "ResultPath": null,
+      "Next": "r4-Web-Sehll-Critical"
+    },
+    "RouteR4CriticalCandidatesPresent": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.instance_ids",
+              "IsPresent": true
+            },
+            {
+              "Not": {
+                "Variable": "$.instance_ids",
+                "IsNull": true
+              }
+            }
+          ],
+          "Next": "CountR4CriticalCandidates"
+        }
+      ],
+      "Default": "NotifyCriticalDiscord"
+    },
+    "CountR4CriticalCandidates": {
+      "Type": "Pass",
+      "Parameters": {
+        "count.$": "States.ArrayLength($.instance_ids)"
+      },
+      "ResultPath": "$.r4_critical_candidate_count",
+      "Next": "RouteR4CriticalCandidateCount"
+    },
+    "RouteR4CriticalCandidateCount": {
+      "Type": "Choice",
+      "Comment": "Discord String Select supports at most 25 options; unknown/empty/oversized selections are notification-only.",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.r4_critical_candidate_count.count",
+              "NumericGreaterThan": 0
+            },
+            {
+              "Variable": "$.r4_critical_candidate_count.count",
+              "NumericLessThanEquals": 25
+            }
+          ],
+          "Next": "NotifyDiscordAndWaitApproval_R4_Critical"
+        }
+      ],
+      "Default": "NotifyCriticalDiscord"
+    },
+    "NotifyDiscordAndWaitApproval_R4_Critical": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R4_Critical_Function",
+        "Payload": {
+          "finding.$": "$",
+          "taskToken.$": "$$.Task.Token",
+          "executionArn.$": "$$.Execution.Id",
+          "approvalTimeoutSeconds": 900
+        }
+      },
+      "TimeoutSeconds": 900,
+      "ResultPath": "$.approval",
+      "Next": "ApprovalReceived_R4_Critical",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.Timeout"
+          ],
+          "ResultPath": "$.approval_wait_error",
+          "Next": "ApprovalTimedOut_R4"
+        },
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.approval_wait_error",
+          "Next": "ApprovalNotificationFailed_R4"
+        }
+      ]
+    },
+    "ApprovalReceived_R4_Critical": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.approval.decision",
+          "StringEquals": "APPROVED",
+          "Next": "ValidateApprovedR4CriticalResponse"
+        },
+        {
+          "Variable": "$.approval.decision",
+          "StringEquals": "BENIGN",
+          "Next": "R4Benign"
+        },
+        {
+          "Variable": "$.approval.decision",
+          "StringEquals": "FALSE_POSITIVE",
+          "Next": "R4FalsePositive"
+        }
+      ],
+      "Default": "ApprovalDismissed_R4"
+    },
+    "ValidateApprovedR4CriticalResponse": {
+      "Type": "Choice",
+      "Comment": "Validate task-token callback metadata before accepting approved targets. The R4 Lambda also validates Discord reviewer authorization and submitted IDs.",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.approval.sample",
+              "BooleanEquals": false
+            },
+            {
+              "Variable": "$.approval.finding_id",
+              "StringEqualsPath": "$.finding_id"
+            },
+            {
+              "Variable": "$.approval.target_instance_ids",
+              "IsPresent": true
+            },
+            {
+              "Not": {
+                "Variable": "$.approval.target_instance_ids",
+                "IsNull": true
+              }
+            }
+          ],
+          "Next": "CountApprovedR4CriticalTargets"
+        }
+      ],
+      "Default": "RejectInvalidR4CriticalApproval"
+    },
+    "CountApprovedR4CriticalTargets": {
+      "Type": "Pass",
+      "Parameters": {
+        "count.$": "States.ArrayLength($.approval.target_instance_ids)"
+      },
+      "ResultPath": "$.r4_critical_target_count",
+      "Next": "RouteApprovedR4CriticalCount"
+    },
+    "RouteApprovedR4CriticalCount": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.r4_critical_target_count.count",
+              "NumericGreaterThan": 0
+            },
+            {
+              "Variable": "$.r4_critical_target_count.count",
+              "NumericLessThanEquals": 25
+            }
+          ],
+          "Next": "PrevalidateAllR4CriticalTargets"
+        }
+      ],
+      "Default": "RejectInvalidR4CriticalApproval"
+    },
+    "PrevalidateAllR4CriticalTargets": {
+      "Type": "Map",
+      "Comment": "Validate every selected target against normalized candidate IDs BEFORE starting any isolation. Fail closed if any selected ID is absent.",
+      "ItemsPath": "$.approval.target_instance_ids",
+      "MaxConcurrency": 1,
+      "ItemSelector": {
+        "instance_id.$": "$$.Map.Item.Value",
+        "candidate_ids.$": "$.instance_ids"
+      },
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "CheckR4CriticalMembership",
+        "States": {
+          "CheckR4CriticalMembership": {
+            "Type": "Pass",
+            "Parameters": {
+              "valid.$": "States.ArrayContains($.candidate_ids, $.instance_id)"
+            },
+            "ResultPath": "$.membership",
+            "Next": "RouteR4CriticalMembership"
+          },
+          "RouteR4CriticalMembership": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Variable": "$.membership.valid",
+                "BooleanEquals": true,
+                "Next": "R4CriticalMemberVerified"
+              }
+            ],
+            "Default": "RejectR4CriticalUnknownInstance"
+          },
+          "R4CriticalMemberVerified": {
+            "Type": "Succeed"
+          },
+          "RejectR4CriticalUnknownInstance": {
+            "Type": "Fail",
+            "Error": "InvalidR4CriticalTarget",
+            "Cause": "Approved instance ID is not among normalized candidate IDs."
+          }
+        }
+      },
+      "ResultPath": null,
+      "Next": "MapSelectedEC2_R4_Critical"
+    },
+    "RejectInvalidR4CriticalApproval": {
+      "Type": "Fail",
+      "Error": "InvalidR4CriticalApproval",
+      "Cause": "Approval must match the original finding, must not be a sample, and must contain between 1 and 25 selected instance IDs."
+    },
+    "MapSelectedEC2_R4_Critical": {
+      "Type": "Map",
+      "Comment": "Sequentially enrich and isolate only explicitly approved EC2 instances; each target is enriched independently to avoid reusing another instance VPC metadata.",
+      "ItemsPath": "$.approval.target_instance_ids",
+      "MaxConcurrency": 1,
+      "ItemSelector": {
+        "instance_id.$": "$$.Map.Item.Value",
+        "resource_type": "AwsEc2Instance",
+        "finding_id.$": "$.finding_id",
+        "account_id.$": "$.account_id",
+        "region.$": "$.region",
+        "finding_type.$": "$.finding_type",
+        "runbook_id.$": "$.runbook_id",
+        "severity.$": "$.severity",
+        "sample.$": "$.approval.sample",
+        "approval.$": "$.approval",
+        "record_state.$": "$.record_state",
+        "workflow_status.$": "$.workflow_status",
+        "product.$": "$.product"
+      },
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "EnrichSelectedEC2_R4_Critical",
+        "States": {
+          "EnrichSelectedEC2_R4_Critical": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:socing-securityhub-enrich-ec2",
+              "Payload.$": "$"
+            },
+            "OutputPath": "$.Payload",
+            "Next": "CheckSelectedEC2_R4_Critical"
+          },
+          "CheckSelectedEC2_R4_Critical": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "And": [
+                  {
+                    "Variable": "$.enrichment_status",
+                    "StringEquals": "success"
+                  },
+                  {
+                    "Variable": "$.vpc_id",
+                    "IsPresent": true
+                  },
+                  {
+                    "Not": {
+                      "Variable": "$.vpc_id",
+                      "IsNull": true
+                    }
+                  }
+                ],
+                "Next": "CollectEvidenceSelectedEC2_R4_Critical"
+              }
+            ],
+            "Default": "CannotEnrichSelectedEC2_R4_Critical"
+          },
+          "CollectEvidenceSelectedEC2_R4_Critical": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:soc-evidence-collector:$LATEST",
+              "Payload.$": "$"
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 3,
+                "BackoffRate": 2,
+                "JitterStrategy": "FULL"
+              }
+            ],
+            "ResultPath": null,
+            "Next": "IsolateSelectedEC2_R4_Critical"
+          },
+          "IsolateSelectedEC2_R4_Critical": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R4_Lambda_Function",
+              "Payload.$": "$"
+            },
+            "OutputPath": "$.Payload",
+            "Next": "VerifyR4CriticalIsolationOutcome"
+          },
+          "CannotEnrichSelectedEC2_R4_Critical": {
+            "Type": "Fail",
+            "Error": "R4CriticalTargetEnrichmentFailed",
+            "Cause": "EC2 enrichment failed or lacked a VPC ID; no isolation attempted for this target."
+          },
+          "VerifyR4CriticalIsolationOutcome": {
+            "Type": "Choice",
+            "Comment": "The Lambda invocation succeeding does not mean isolation succeeded. Require action_performed=true.",
+            "Choices": [
+              {
+                "Variable": "$.isolation_result.action_performed",
+                "BooleanEquals": true,
+                "Next": "R4CriticalIsolationConfirmed"
+              }
+            ],
+            "Default": "R4CriticalIsolationNotPerformed"
+          },
+          "R4CriticalIsolationConfirmed": {
+            "Type": "Succeed"
+          },
+          "R4CriticalIsolationNotPerformed": {
+            "Type": "Fail",
+            "Error": "R4CriticalIsolationNotPerformed",
+            "Cause": "Isolation Lambda returned action_performed != true; inspect the item output for the refusal reason."
+          }
+        }
+      },
+      "ResultPath": "$.r4_critical_isolation_results",
+      "End": true
+    },
+    "r4-Web-Sehll-Critical": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:r3-weh-shell-critical:$LATEST",
+        "Payload": {
+          "instance_id.$": "$.instance_id",
+          "source_ip.$": "$.source_ip",
+          "account_id.$": "$.details.resource_account_id",
+          "region.$": "$.region",
+          "finding_id.$": "$.finding_id"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "End": true,
+      "ResultPath": null
+    }
+  }
+}

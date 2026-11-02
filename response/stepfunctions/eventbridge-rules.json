@@ -1,0 +1,83 @@
+[
+  {
+    "Name": "socing-securityhub-guardduty-high-critical-new",
+    "EventPattern": {
+      "source": [
+        "aws.securityhub"
+      ],
+      "detail-type": [
+        "Security Hub Findings - Imported"
+      ],
+      "region": [
+        "ap-northeast-2"
+      ],
+      "detail": {
+        "findings": {
+          "AwsAccountId": [
+            "059865587057"
+          ],
+          "ProductArn": [
+            "arn:aws:securityhub:ap-northeast-2::product/aws/guardduty"
+          ],
+          "Severity": {
+            "Label": [
+              "MEDIUM",
+              "HIGH",
+              "CRITICAL"
+            ]
+          },
+          "Workflow": {
+            "Status": [
+              "NEW"
+            ]
+          },
+          "RecordState": [
+            "ACTIVE"
+          ]
+        }
+      }
+    },
+    "State": "ENABLED",
+    "Description": ""
+  },
+  {
+    "Name": "wazuh",
+    "EventPattern": {
+      "source": [
+        "aws.securityhub"
+      ],
+      "detail-type": [
+        "Security Hub Findings - Imported"
+      ],
+      "detail": {
+        "findings": {
+          "ProductName": [
+            "Default"
+          ],
+          "GeneratorId": [
+            {
+              "prefix": "wazuh-rule-"
+            }
+          ],
+          "Severity": {
+            "Label": [
+              "MEDIUM",
+              "HIGH",
+              "CRITICAL"
+            ]
+          },
+          "Workflow": {
+            "Status": [
+              "NEW"
+            ]
+          },
+          "RecordState": [
+            "ACTIVE"
+          ]
+        }
+      }
+    },
+    "State": "ENABLED",
+    "Description": ""
+  }
+]

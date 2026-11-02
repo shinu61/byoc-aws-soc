@@ -1,0 +1,10 @@
+<!-- Wazuh Manager: /var/ossec/etc/ossec.conf
+     level 6 이상 알림을 custom-securityhub 스크립트로 넘긴다.
+     스크립트 위치: /var/ossec/integrations/custom-securityhub(.py) -->
+<ossec_config>
+  <integration>
+    <name>custom-securityhub</name>
+    <level>6</level>
+    <alert_format>json</alert_format>
+  </integration>
+</ossec_config>

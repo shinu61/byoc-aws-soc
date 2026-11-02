@@ -1,0 +1,4 @@
+bash:high
+sh:high
+useradd:high
+usermod:high

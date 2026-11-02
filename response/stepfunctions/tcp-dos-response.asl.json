@@ -1,0 +1,1964 @@
+{
+  "Comment": "Standalone R7 test only. Explicit registered target; check/isolate/restore modes. No detection trigger. No automatic rollback or ambiguous mutation retries.",
+  "QueryLanguage": "JSONPath",
+  "StartAt": "ValidateInput",
+  "TimeoutSeconds": 1800,
+  "States": {
+    "ValidateInput": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "And": [
+                    {
+                      "Variable": "$.instance_id",
+                      "IsPresent": true
+                    },
+                    {
+                      "Variable": "$.instance_id",
+                      "StringEquals": "i-071919a7ef794ee32"
+                    }
+                  ]
+                },
+                {
+                  "And": [
+                    {
+                      "Variable": "$.mode",
+                      "IsPresent": true
+                    },
+                    {
+                      "Variable": "$.mode",
+                      "IsString": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.mode",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.mode",
+                  "StringEquals": "restore"
+                }
+              ]
+            }
+          ],
+          "Next": "Initialize"
+        },
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "And": [
+                    {
+                      "Variable": "$.instance_id",
+                      "IsPresent": true
+                    },
+                    {
+                      "Variable": "$.instance_id",
+                      "StringEquals": "i-071919a7ef794ee32"
+                    }
+                  ]
+                },
+                {
+                  "And": [
+                    {
+                      "Variable": "$.mode",
+                      "IsPresent": true
+                    },
+                    {
+                      "Variable": "$.mode",
+                      "IsString": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.evidence_id",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.evidence_id",
+                  "IsString": true
+                }
+              ]
+            },
+            {
+              "Or": [
+                {
+                  "Variable": "$.require_termination_observed",
+                  "IsPresent": false
+                },
+                {
+                  "And": [
+                    {
+                      "Variable": "$.require_termination_observed",
+                      "IsPresent": true
+                    },
+                    {
+                      "Variable": "$.require_termination_observed",
+                      "IsBoolean": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "Or": [
+                {
+                  "And": [
+                    {
+                      "Variable": "$.mode",
+                      "IsPresent": true
+                    },
+                    {
+                      "Variable": "$.mode",
+                      "StringEquals": "check"
+                    }
+                  ]
+                },
+                {
+                  "And": [
+                    {
+                      "Variable": "$.mode",
+                      "IsPresent": true
+                    },
+                    {
+                      "Variable": "$.mode",
+                      "StringEquals": "isolate"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "Next": "Initialize"
+        }
+      ],
+      "Default": "InvalidInput"
+    },
+    "Initialize": {
+      "Type": "Pass",
+      "Parameters": {
+        "request.$": "$"
+      },
+      "Next": "RouteMode"
+    },
+    "RouteMode": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.request.mode",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.request.mode",
+              "StringEquals": "restore"
+            }
+          ],
+          "Next": "RestoreIAM"
+        }
+      ],
+      "Default": "ReadSecurityGroups"
+    },
+    "ReadSecurityGroups": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response",
+        "Payload": {
+          "action": "check",
+          "instance_id": "i-071919a7ef794ee32",
+          "account_id": "059865587057",
+          "region": "ap-northeast-2"
+        }
+      },
+      "ResultSelector": {
+        "data.$": "$.Payload"
+      },
+      "ResultPath": "$.sg_check",
+      "TimeoutSeconds": 75,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.task_error",
+          "Next": "TaskFailed"
+        }
+      ],
+      "Next": "VerifyOriginalSecurityGroup",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ]
+    },
+    "VerifyOriginalSecurityGroup": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.sg_check.data.verified",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.sg_check.data.verified",
+                  "BooleanEquals": true
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.sg_check.data.after[0]",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.sg_check.data.after[0]",
+                  "StringEquals": "sg-02447c8b971479d0c"
+                }
+              ]
+            },
+            {
+              "Variable": "$.sg_check.data.after[1]",
+              "IsPresent": false
+            }
+          ],
+          "Next": "CheckSecurityGroupPermissions"
+        }
+      ],
+      "Default": "BaselineNotRestored"
+    },
+    "CheckSecurityGroupPermissions": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response",
+        "Payload": {
+          "action": "dry_run",
+          "instance_id": "i-071919a7ef794ee32",
+          "account_id": "059865587057",
+          "region": "ap-northeast-2"
+        }
+      },
+      "ResultSelector": {
+        "data.$": "$.Payload"
+      },
+      "ResultPath": "$.sg_dry_run",
+      "TimeoutSeconds": 75,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.task_error",
+          "Next": "TaskFailed"
+        }
+      ],
+      "Next": "VerifySGPermissions",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ]
+    },
+    "VerifySGPermissions": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.sg_dry_run.data.status",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.sg_dry_run.data.status",
+                  "StringEquals": "DRY_RUN_PASSED"
+                }
+              ]
+            }
+          ],
+          "Next": "ReadIAMPolicy"
+        }
+      ],
+      "Default": "PreflightFailed"
+    },
+    "ReadIAMPolicy": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response",
+        "Payload": {
+          "action": "iam_check",
+          "instance_id": "i-071919a7ef794ee32",
+          "account_id": "059865587057",
+          "region": "ap-northeast-2"
+        }
+      },
+      "ResultSelector": {
+        "data.$": "$.Payload"
+      },
+      "ResultPath": "$.iam_check",
+      "TimeoutSeconds": 75,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.task_error",
+          "Next": "TaskFailed"
+        }
+      ],
+      "Next": "VerifyIAMBaseline",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ]
+    },
+    "VerifyIAMBaseline": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.iam_check.data.configuration_verified",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.iam_check.data.configuration_verified",
+                  "BooleanEquals": true
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.iam_check.data.policy_present",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.iam_check.data.policy_present",
+                  "BooleanEquals": false
+                }
+              ]
+            }
+          ],
+          "Next": "CheckNACLPermissions"
+        }
+      ],
+      "Default": "BaselineNotRestored"
+    },
+    "CheckNACLPermissions": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response",
+        "Payload": {
+          "action": "nacl_dry_run",
+          "instance_id": "i-071919a7ef794ee32",
+          "account_id": "059865587057",
+          "region": "ap-northeast-2"
+        }
+      },
+      "ResultSelector": {
+        "data.$": "$.Payload"
+      },
+      "ResultPath": "$.nacl_check",
+      "TimeoutSeconds": 75,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.task_error",
+          "Next": "TaskFailed"
+        }
+      ],
+      "Next": "VerifyNACLBaseline",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ]
+    },
+    "VerifyNACLBaseline": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.nacl_check.data.status",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.nacl_check.data.status",
+                  "StringEquals": "NACL_DRY_RUN_PASSED"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.nacl_check.data.ready_for_apply",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.nacl_check.data.ready_for_apply",
+                  "BooleanEquals": true
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.nacl_check.data.owner_marker_present",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.nacl_check.data.owner_marker_present",
+                  "BooleanEquals": false
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.nacl_check.data.managed_rules[0].present",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.nacl_check.data.managed_rules[0].present",
+                  "BooleanEquals": false
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.nacl_check.data.managed_rules[1].present",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.nacl_check.data.managed_rules[1].present",
+                  "BooleanEquals": false
+                }
+              ]
+            }
+          ],
+          "Next": "CheckSnapshotPermissions"
+        }
+      ],
+      "Default": "PreflightFailed"
+    },
+    "CheckSnapshotPermissions": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response",
+        "Payload": {
+          "action": "snapshot_check",
+          "instance_id": "i-071919a7ef794ee32",
+          "account_id": "059865587057",
+          "region": "ap-northeast-2",
+          "evidence_id.$": "$.request.evidence_id"
+        }
+      },
+      "ResultSelector": {
+        "data.$": "$.Payload"
+      },
+      "ResultPath": "$.snapshot_check",
+      "TimeoutSeconds": 75,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.task_error",
+          "Next": "TaskFailed"
+        }
+      ],
+      "Next": "VerifySnapshotPermissions",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ]
+    },
+    "VerifySnapshotPermissions": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.snapshot_check.data.status",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.snapshot_check.data.status",
+                  "StringEquals": "SNAPSHOT_DRY_RUN_PASSED"
+                }
+              ]
+            }
+          ],
+          "Next": "RouteAfterPreflight"
+        }
+      ],
+      "Default": "PreflightFailed"
+    },
+    "RouteAfterPreflight": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.request.mode",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.request.mode",
+              "StringEquals": "check"
+            }
+          ],
+          "Next": "SendConnectionTest"
+        }
+      ],
+      "Default": "ReadExistingEvidence"
+    },
+    "SendConnectionTest": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response",
+        "Payload": {
+          "action": "connection_test_send",
+          "instance_id": "i-071919a7ef794ee32",
+          "account_id": "059865587057",
+          "region": "ap-northeast-2"
+        }
+      },
+      "ResultSelector": {
+        "data.$": "$.Payload"
+      },
+      "ResultPath": "$.send",
+      "TimeoutSeconds": 75,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.task_error",
+          "Next": "TaskFailed"
+        }
+      ],
+      "Next": "VerifyTestCommandSubmitted"
+    },
+    "VerifyTestCommandSubmitted": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.send.data.status",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.send.data.status",
+                  "StringEquals": "COMMAND_SENT"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.send.data.mode",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.send.data.mode",
+                  "StringEquals": "test"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.send.data.command_id",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.send.data.command_id",
+                  "IsString": true
+                }
+              ]
+            }
+          ],
+          "Next": "InitializeSSMPoll"
+        }
+      ],
+      "Default": "SSMSubmissionUnconfirmed"
+    },
+    "ReadExistingEvidence": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response",
+        "Payload": {
+          "action": "snapshot_status",
+          "instance_id": "i-071919a7ef794ee32",
+          "account_id": "059865587057",
+          "region": "ap-northeast-2",
+          "evidence_id.$": "$.request.evidence_id"
+        }
+      },
+      "ResultSelector": {
+        "data.$": "$.Payload"
+      },
+      "ResultPath": "$.existing_evidence",
+      "TimeoutSeconds": 75,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.task_error",
+          "Next": "TaskFailed"
+        }
+      ],
+      "Next": "RequireNewEvidenceId",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ]
+    },
+    "RequireNewEvidenceId": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.existing_evidence.data.status",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.existing_evidence.data.status",
+                  "StringEquals": "SNAPSHOT_NOT_FOUND"
+                }
+              ]
+            }
+          ],
+          "Next": "IsolateAndSendTermination"
+        }
+      ],
+      "Default": "EvidenceIdAlreadyUsed"
+    },
+    "IsolateAndSendTermination": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response",
+        "Payload": {
+          "action": "isolate_and_terminate_send",
+          "instance_id": "i-071919a7ef794ee32",
+          "account_id": "059865587057",
+          "region": "ap-northeast-2"
+        }
+      },
+      "ResultSelector": {
+        "data.$": "$.Payload"
+      },
+      "ResultPath": "$.send",
+      "TimeoutSeconds": 75,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.task_error",
+          "Next": "TaskFailed"
+        }
+      ],
+      "Next": "VerifyIsolationCommandSubmitted"
+    },
+    "VerifyIsolationCommandSubmitted": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.send.data.status",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.send.data.status",
+                  "StringEquals": "SG_ISOLATED_COMMAND_SENT"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.send.data.mode",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.send.data.mode",
+                  "StringEquals": "isolate_terminate"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.send.data.security_group.verified",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.send.data.security_group.verified",
+                  "BooleanEquals": true
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.send.data.command_id",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.send.data.command_id",
+                  "IsString": true
+                }
+              ]
+            }
+          ],
+          "Next": "InitializeSSMPoll"
+        }
+      ],
+      "Default": "SSMSubmissionUnconfirmed"
+    },
+    "InitializeSSMPoll": {
+      "Type": "Pass",
+      "Result": {
+        "count": 0
+      },
+      "ResultPath": "$.ssm_poll",
+      "Next": "WaitForSSM"
+    },
+    "WaitForSSM": {
+      "Type": "Wait",
+      "Seconds": 5,
+      "Next": "IncrementSSMPoll"
+    },
+    "IncrementSSMPoll": {
+      "Type": "Pass",
+      "Parameters": {
+        "count.$": "States.MathAdd($.ssm_poll.count, 1)"
+      },
+      "ResultPath": "$.ssm_poll",
+      "Next": "ReadSSMResult"
+    },
+    "ReadSSMResult": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response",
+        "Payload": {
+          "action": "connection_status",
+          "instance_id": "i-071919a7ef794ee32",
+          "account_id": "059865587057",
+          "region": "ap-northeast-2",
+          "command_id.$": "$.send.data.command_id"
+        }
+      },
+      "ResultSelector": {
+        "data.$": "$.Payload"
+      },
+      "ResultPath": "$.connection",
+      "TimeoutSeconds": 75,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.task_error",
+          "Next": "TaskFailed"
+        }
+      ],
+      "Next": "RouteSSMStatus",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ]
+    },
+    "RouteSSMStatus": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Or": [
+            {
+              "And": [
+                {
+                  "Variable": "$.connection.data.status",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.connection.data.status",
+                  "StringEquals": "NOT_VISIBLE_YET"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.connection.data.status",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.connection.data.status",
+                  "StringEquals": "Pending"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.connection.data.status",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.connection.data.status",
+                  "StringEquals": "InProgress"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.connection.data.status",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.connection.data.status",
+                  "StringEquals": "Delayed"
+                }
+              ]
+            }
+          ],
+          "Next": "CheckSSMPollLimit"
+        },
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.connection.data.status",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.connection.data.status",
+                  "StringEquals": "Success"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.connection.data.response_code",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.connection.data.response_code",
+                  "NumericEquals": 0
+                }
+              ]
+            }
+          ],
+          "Next": "RouteCommandResult"
+        }
+      ],
+      "Default": "SSMCommandFailed"
+    },
+    "CheckSSMPollLimit": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.ssm_poll.count",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.ssm_poll.count",
+              "NumericLessThan": 20
+            }
+          ],
+          "Next": "WaitForSSM"
+        }
+      ],
+      "Default": "SSMPollLimitExceeded"
+    },
+    "RouteCommandResult": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.request.mode",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.request.mode",
+                  "StringEquals": "check"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.connection.data.mode",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.connection.data.mode",
+                  "StringEquals": "test"
+                }
+              ]
+            }
+          ],
+          "Next": "VerifyConnectionTest"
+        },
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.request.mode",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.request.mode",
+                  "StringEquals": "isolate"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.connection.data.mode",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.connection.data.mode",
+                  "StringEquals": "isolate_terminate"
+                }
+              ]
+            }
+          ],
+          "Next": "VerifyIsolationCleanup"
+        }
+      ],
+      "Default": "UnexpectedSSMResult"
+    },
+    "VerifyConnectionTest": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.connection.data.test_passed",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.connection.data.test_passed",
+                  "BooleanEquals": true
+                }
+              ]
+            }
+          ],
+          "Next": "CheckPassed"
+        }
+      ],
+      "Default": "ConnectionTestFailed"
+    },
+    "VerifyIsolationCleanup": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.connection.data.scope_clear_at_command_time",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.connection.data.scope_clear_at_command_time",
+                  "BooleanEquals": true
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.connection.data.isolation_sg_present_now",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.connection.data.isolation_sg_present_now",
+                  "BooleanEquals": true
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.connection.data.scope_cleanup_verified_with_sg",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.connection.data.scope_cleanup_verified_with_sg",
+                  "BooleanEquals": true
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.connection.data.termination_scope",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.connection.data.termination_scope",
+                  "StringEquals": "10.0.10.253:80/TCP"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.connection.data.termination_details.remaining_count",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.connection.data.termination_details.remaining_count",
+                  "NumericEquals": 0
+                }
+              ]
+            }
+          ],
+          "Next": "RouteTerminationObservation"
+        }
+      ],
+      "Default": "IsolationCleanupFailed"
+    },
+    "RouteTerminationObservation": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.request.require_termination_observed",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.request.require_termination_observed",
+              "BooleanEquals": true
+            }
+          ],
+          "Next": "VerifyActualConnectionTermination"
+        }
+      ],
+      "Default": "ApplyNACL"
+    },
+    "VerifyActualConnectionTermination": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.connection.data.termination_observed",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.connection.data.termination_observed",
+                  "BooleanEquals": true
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.connection.data.termination_details.closed_count",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.connection.data.termination_details.closed_count",
+                  "NumericGreaterThan": 0
+                }
+              ]
+            }
+          ],
+          "Next": "ApplyNACL"
+        }
+      ],
+      "Default": "ConnectionTerminationNotObserved"
+    },
+    "ApplyNACL": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response",
+        "Payload": {
+          "action": "nacl_isolate",
+          "instance_id": "i-071919a7ef794ee32",
+          "account_id": "059865587057",
+          "region": "ap-northeast-2"
+        }
+      },
+      "ResultSelector": {
+        "data.$": "$.Payload"
+      },
+      "ResultPath": "$.nacl_isolate",
+      "TimeoutSeconds": 75,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.task_error",
+          "Next": "TaskFailed"
+        }
+      ],
+      "Next": "VerifyNACLIsolation"
+    },
+    "VerifyNACLIsolation": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.nacl_isolate.data.status",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.nacl_isolate.data.status",
+                  "StringEquals": "NACL_RULES_APPLIED"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.nacl_isolate.data.configuration_verified",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.nacl_isolate.data.configuration_verified",
+                  "BooleanEquals": true
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.nacl_isolate.data.nacl_isolated_configuration",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.nacl_isolate.data.nacl_isolated_configuration",
+                  "BooleanEquals": true
+                }
+              ]
+            }
+          ],
+          "Next": "ApplyIAMIsolation"
+        }
+      ],
+      "Default": "NACLIsolationFailed"
+    },
+    "ApplyIAMIsolation": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response",
+        "Payload": {
+          "action": "iam_isolate",
+          "instance_id": "i-071919a7ef794ee32",
+          "account_id": "059865587057",
+          "region": "ap-northeast-2"
+        }
+      },
+      "ResultSelector": {
+        "data.$": "$.Payload"
+      },
+      "ResultPath": "$.iam_isolate",
+      "TimeoutSeconds": 75,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.task_error",
+          "Next": "TaskFailed"
+        }
+      ],
+      "Next": "VerifyIAMIsolation"
+    },
+    "VerifyIAMIsolation": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.iam_isolate.data.configuration_verified",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.iam_isolate.data.configuration_verified",
+                  "BooleanEquals": true
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.iam_isolate.data.policy_present",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.iam_isolate.data.policy_present",
+                  "BooleanEquals": true
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.iam_isolate.data.policy_matches",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.iam_isolate.data.policy_matches",
+                  "BooleanEquals": true
+                }
+              ]
+            }
+          ],
+          "Next": "CreateEvidenceSnapshot"
+        }
+      ],
+      "Default": "IAMIsolationFailed"
+    },
+    "CreateEvidenceSnapshot": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response",
+        "Payload": {
+          "action": "snapshot_create",
+          "instance_id": "i-071919a7ef794ee32",
+          "account_id": "059865587057",
+          "region": "ap-northeast-2",
+          "evidence_id.$": "$.request.evidence_id"
+        }
+      },
+      "ResultSelector": {
+        "data.$": "$.Payload"
+      },
+      "ResultPath": "$.snapshot_create",
+      "TimeoutSeconds": 75,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.task_error",
+          "Next": "TaskFailed"
+        }
+      ],
+      "Next": "VerifySnapshotSubmitted"
+    },
+    "VerifySnapshotSubmitted": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.snapshot_create.data.snapshot_id",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.snapshot_create.data.snapshot_id",
+                  "IsString": true
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.snapshot_create.data.snapshot_created",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.snapshot_create.data.snapshot_created",
+                  "BooleanEquals": true
+                }
+              ]
+            }
+          ],
+          "Next": "InitializeSnapshotPoll"
+        }
+      ],
+      "Default": "SnapshotCreationFailed"
+    },
+    "InitializeSnapshotPoll": {
+      "Type": "Pass",
+      "Result": {
+        "count": 0
+      },
+      "ResultPath": "$.snapshot_poll",
+      "Next": "WaitForSnapshot"
+    },
+    "WaitForSnapshot": {
+      "Type": "Wait",
+      "Seconds": 15,
+      "Next": "IncrementSnapshotPoll"
+    },
+    "IncrementSnapshotPoll": {
+      "Type": "Pass",
+      "Parameters": {
+        "count.$": "States.MathAdd($.snapshot_poll.count, 1)"
+      },
+      "ResultPath": "$.snapshot_poll",
+      "Next": "ReadSnapshotStatus"
+    },
+    "ReadSnapshotStatus": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response",
+        "Payload": {
+          "action": "snapshot_status",
+          "instance_id": "i-071919a7ef794ee32",
+          "account_id": "059865587057",
+          "region": "ap-northeast-2",
+          "evidence_id.$": "$.request.evidence_id"
+        }
+      },
+      "ResultSelector": {
+        "data.$": "$.Payload"
+      },
+      "ResultPath": "$.snapshot_status",
+      "TimeoutSeconds": 75,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.task_error",
+          "Next": "TaskFailed"
+        }
+      ],
+      "Next": "RouteSnapshotStatus",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ]
+    },
+    "RouteSnapshotStatus": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.snapshot_status.data.snapshot_state",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.snapshot_status.data.snapshot_state",
+                  "StringEquals": "completed"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.snapshot_status.data.snapshot_completed",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.snapshot_status.data.snapshot_completed",
+                  "BooleanEquals": true
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.snapshot_status.data.snapshot_id",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.snapshot_status.data.snapshot_id",
+                  "StringEqualsPath": "$.snapshot_create.data.snapshot_id"
+                }
+              ]
+            }
+          ],
+          "Next": "IsolationPassed"
+        },
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.snapshot_status.data.snapshot_state",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.snapshot_status.data.snapshot_state",
+                  "StringEquals": "pending"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.snapshot_status.data.snapshot_id",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.snapshot_status.data.snapshot_id",
+                  "StringEqualsPath": "$.snapshot_create.data.snapshot_id"
+                }
+              ]
+            }
+          ],
+          "Next": "CheckSnapshotPollLimit"
+        },
+        {
+          "And": [
+            {
+              "Variable": "$.snapshot_status.data.status",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.snapshot_status.data.status",
+              "StringEquals": "SNAPSHOT_NOT_FOUND"
+            }
+          ],
+          "Next": "CheckSnapshotPollLimit"
+        }
+      ],
+      "Default": "SnapshotFailed"
+    },
+    "CheckSnapshotPollLimit": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.snapshot_poll.count",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.snapshot_poll.count",
+              "NumericLessThan": 60
+            }
+          ],
+          "Next": "WaitForSnapshot"
+        }
+      ],
+      "Default": "SnapshotPollLimitExceeded"
+    },
+    "RestoreIAM": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response",
+        "Payload": {
+          "action": "iam_restore",
+          "instance_id": "i-071919a7ef794ee32",
+          "account_id": "059865587057",
+          "region": "ap-northeast-2"
+        }
+      },
+      "ResultSelector": {
+        "data.$": "$.Payload"
+      },
+      "ResultPath": "$.iam_restore",
+      "TimeoutSeconds": 75,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.task_error",
+          "Next": "RestoreTaskFailed"
+        }
+      ],
+      "Next": "VerifyIAMRestore"
+    },
+    "VerifyIAMRestore": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.iam_restore.data.configuration_verified",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.iam_restore.data.configuration_verified",
+                  "BooleanEquals": true
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.iam_restore.data.policy_present",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.iam_restore.data.policy_present",
+                  "BooleanEquals": false
+                }
+              ]
+            }
+          ],
+          "Next": "RestoreNACL"
+        }
+      ],
+      "Default": "RestoreVerificationFailed"
+    },
+    "RestoreNACL": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response",
+        "Payload": {
+          "action": "nacl_restore",
+          "instance_id": "i-071919a7ef794ee32",
+          "account_id": "059865587057",
+          "region": "ap-northeast-2"
+        }
+      },
+      "ResultSelector": {
+        "data.$": "$.Payload"
+      },
+      "ResultPath": "$.nacl_restore",
+      "TimeoutSeconds": 75,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.task_error",
+          "Next": "RestoreTaskFailed"
+        }
+      ],
+      "Next": "VerifyNACLRestore"
+    },
+    "VerifyNACLRestore": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.nacl_restore.data.status",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.nacl_restore.data.status",
+                  "StringEquals": "NACL_RULES_RESTORED"
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.nacl_restore.data.configuration_verified",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.nacl_restore.data.configuration_verified",
+                  "BooleanEquals": true
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.nacl_restore.data.owner_marker_present",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.nacl_restore.data.owner_marker_present",
+                  "BooleanEquals": false
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.nacl_restore.data.managed_rules[0].present",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.nacl_restore.data.managed_rules[0].present",
+                  "BooleanEquals": false
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.nacl_restore.data.managed_rules[1].present",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.nacl_restore.data.managed_rules[1].present",
+                  "BooleanEquals": false
+                }
+              ]
+            }
+          ],
+          "Next": "RestoreSecurityGroup"
+        }
+      ],
+      "Default": "RestoreVerificationFailed"
+    },
+    "RestoreSecurityGroup": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:ap-northeast-2:229251311221:function:R7-TCPDoS-Response",
+        "Payload": {
+          "action": "restore",
+          "instance_id": "i-071919a7ef794ee32",
+          "account_id": "059865587057",
+          "region": "ap-northeast-2"
+        }
+      },
+      "ResultSelector": {
+        "data.$": "$.Payload"
+      },
+      "ResultPath": "$.sg_restore",
+      "TimeoutSeconds": 75,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.task_error",
+          "Next": "RestoreTaskFailed"
+        }
+      ],
+      "Next": "VerifySecurityGroupRestore"
+    },
+    "VerifySecurityGroupRestore": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "And": [
+                {
+                  "Variable": "$.sg_restore.data.verified",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.sg_restore.data.verified",
+                  "BooleanEquals": true
+                }
+              ]
+            },
+            {
+              "And": [
+                {
+                  "Variable": "$.sg_restore.data.after[0]",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.sg_restore.data.after[0]",
+                  "StringEquals": "sg-02447c8b971479d0c"
+                }
+              ]
+            },
+            {
+              "Variable": "$.sg_restore.data.after[1]",
+              "IsPresent": false
+            }
+          ],
+          "Next": "RestorePassed"
+        }
+      ],
+      "Default": "RestoreVerificationFailed"
+    },
+    "CheckPassed": {
+      "Type": "Pass",
+      "Parameters": {
+        "status": "R7_CHECK_PASSED",
+        "instance_id": "i-071919a7ef794ee32",
+        "execution_arn.$": "$$.Execution.Id",
+        "results.$": "$",
+        "mode": "check",
+        "cloud_configuration_changed": false,
+        "test_connection_terminated": true,
+        "detection_trigger_verified": false
+      },
+      "End": true
+    },
+    "IsolationPassed": {
+      "Type": "Pass",
+      "Parameters": {
+        "status": "R7_ISOLATION_WORKFLOW_PASSED",
+        "instance_id": "i-071919a7ef794ee32",
+        "execution_arn.$": "$$.Execution.Id",
+        "results.$": "$",
+        "mode": "isolate",
+        "isolation_configuration_verified": true,
+        "scope_cleanup_verified_with_sg": true,
+        "termination_scope": "10.0.10.253:80/TCP",
+        "termination_observed.$": "$.connection.data.termination_observed",
+        "snapshot_id.$": "$.snapshot_status.data.snapshot_id",
+        "snapshot_completed": true,
+        "packet_blocking_verified": false,
+        "aws_api_denial_verified": false,
+        "detection_trigger_verified": false,
+        "isolation_kept": true,
+        "restore_mode": "restore"
+      },
+      "End": true
+    },
+    "RestorePassed": {
+      "Type": "Pass",
+      "Parameters": {
+        "status": "R7_RESTORE_PASSED",
+        "instance_id": "i-071919a7ef794ee32",
+        "execution_arn.$": "$$.Execution.Id",
+        "results.$": "$",
+        "mode": "restore",
+        "iam_policy_removed": true,
+        "nacl_rules_removed": true,
+        "original_security_group_restored": true,
+        "network_reconnection_verified": false,
+        "evidence_deleted": false
+      },
+      "End": true
+    },
+    "InvalidInput": {
+      "Type": "Fail",
+      "Error": "R7.InvalidInput",
+      "Cause": "Use mode check/isolate/restore and the registered instance_id. check/isolate also require evidence_id."
+    },
+    "BaselineNotRestored": {
+      "Type": "Fail",
+      "Error": "R7.BaselineNotRestored",
+      "Cause": "The target is not in the registered restored baseline. Inspect the result and complete a separate restore execution first."
+    },
+    "PreflightFailed": {
+      "Type": "Fail",
+      "Error": "R7.PreflightFailed",
+      "Cause": "An identity, baseline, or permission preflight failed. No isolation action has started."
+    },
+    "EvidenceIdAlreadyUsed": {
+      "Type": "Fail",
+      "Error": "R7.EvidenceIdAlreadyUsed",
+      "Cause": "Choose a new evidence_id for this isolation test. No isolation action has started."
+    },
+    "SSMSubmissionUnconfirmed": {
+      "Type": "Fail",
+      "Error": "R7.SSMSubmissionUnconfirmed",
+      "Cause": "Command submission or SG verification was not confirmed. Do not blindly resend. Inspect send.data; isolation may already be applied."
+    },
+    "SSMCommandFailed": {
+      "Type": "Fail",
+      "Error": "R7.SSMCommandFailed",
+      "Cause": "SSM returned a failed or unrecognized completion result. Inspect connection.data. If isolating, SG may remain applied."
+    },
+    "SSMPollLimitExceeded": {
+      "Type": "Fail",
+      "Error": "R7.SSMPollLimitExceeded",
+      "Cause": "SSM did not finish within 20 polls. Inspect the command status. SG may remain applied."
+    },
+    "UnexpectedSSMResult": {
+      "Type": "Fail",
+      "Error": "R7.UnexpectedSSMResult",
+      "Cause": "The completed SSM command mode does not match this execution mode."
+    },
+    "ConnectionTestFailed": {
+      "Type": "Fail",
+      "Error": "R7.ConnectionTestFailed",
+      "Cause": "The controlled TCP self-test did not return test_passed true."
+    },
+    "IsolationCleanupFailed": {
+      "Type": "Fail",
+      "Error": "R7.IsolationCleanupFailed",
+      "Cause": "Registered TCP scope cleanup and current isolation SG were not both verified. SG may remain applied."
+    },
+    "ConnectionTerminationNotObserved": {
+      "Type": "Fail",
+      "Error": "R7.ConnectionTerminationNotObserved",
+      "Cause": "No existing connection was observed terminated although this test required it. SG remains applied. Restore and arrange a live registered-scope connection before a new test."
+    },
+    "NACLIsolationFailed": {
+      "Type": "Fail",
+      "Error": "R7.NACLIsolationFailed",
+      "Cause": "NACL configuration was not verified. SG and owned partial NACL rules may remain applied."
+    },
+    "IAMIsolationFailed": {
+      "Type": "Fail",
+      "Error": "R7.IAMIsolationFailed",
+      "Cause": "The target-specific IAM Deny configuration was not verified. SG and NACL may remain applied."
+    },
+    "SnapshotCreationFailed": {
+      "Type": "Fail",
+      "Error": "R7.SnapshotCreationFailed",
+      "Cause": "A new evidence snapshot was not confirmed. Isolation remains applied; inspect snapshot_create.data."
+    },
+    "SnapshotFailed": {
+      "Type": "Fail",
+      "Error": "R7.SnapshotFailed",
+      "Cause": "Snapshot completion failed or the returned snapshot ID differs. Isolation remains applied."
+    },
+    "SnapshotPollLimitExceeded": {
+      "Type": "Fail",
+      "Error": "R7.SnapshotPollLimitExceeded",
+      "Cause": "Snapshot did not complete within 60 polls. Isolation remains applied; inspect its AWS state."
+    },
+    "TaskFailed": {
+      "Type": "Fail",
+      "Error": "R7.TaskFailed",
+      "Cause": "A Lambda invocation failed. Inspect task_error and the failed state input. Isolation actions are not automatically repeated or rolled back."
+    },
+    "RestoreTaskFailed": {
+      "Type": "Fail",
+      "Error": "R7.RestoreTaskFailed",
+      "Cause": "A restore Lambda invocation failed. Inspect task_error; recovery may be partially complete. Keep executions serialized."
+    },
+    "RestoreVerificationFailed": {
+      "Type": "Fail",
+      "Error": "R7.RestoreVerificationFailed",
+      "Cause": "A recovery stage was not verified. Subsequent recovery stages were not started. Inspect the stage output and finish recovery separately."
+    }
+  }
+}

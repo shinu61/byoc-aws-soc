@@ -1,0 +1,8 @@
+<!-- Suricata EC2의 Wazuh Agent: /var/ossec/etc/ossec.conf
+     Suricata 탐지 결과(eve.json)를 Wazuh Manager로 보낸다. -->
+<ossec_config>
+  <localfile>
+    <log_format>json</log_format>
+    <location>/var/log/suricata/eve.json</location>
+  </localfile>
+</ossec_config>

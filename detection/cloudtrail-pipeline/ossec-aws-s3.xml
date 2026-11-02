@@ -1,0 +1,14 @@
+<!-- Wazuh Manager: /var/ossec/etc/ossec.conf
+     조직 Trail이 쌓이는 S3 버킷을 10분마다 읽어 CloudTrail 이벤트를 분석한다. -->
+<ossec_config>
+  <wodle name="aws-s3">
+    <disabled>no</disabled>
+    <interval>10m</interval>
+    <run_on_start>yes</run_on_start>
+    <bucket type="cloudtrail">
+      <name>buildyoursoc-cloudtrail-229251311221</name>
+      <aws_organization_id>o-xh9ev4njmt</aws_organization_id>
+      <regions>ap-northeast-2</regions>
+    </bucket>
+  </wodle>
+</ossec_config>
