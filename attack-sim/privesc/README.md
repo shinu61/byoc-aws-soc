@@ -8,64 +8,37 @@ EC2 인스턴스 역할 자격증명 탈취부터 `iam:PassRole` + Lambda 생성
 
 | 파일 | 내용 |
 |---|---|
-| [`privesc-poc.py`](privesc-poc.py) | 관리자 역할을 입혀 실행한 Lambda (자기 신원 확인용) |
+| [`privesc-poc.py`](privesc-poc.py) | 관리자 역할을 입혀 실행한 Lambda |
 
 ## 공격 흐름
 
-```
-① IMDS 자격증명 탈취 ─▶ ② 정찰 ─▶ ③ CreateFunction (role=관리자 역할) ─▶ ④ Invoke ─▶ 관리자 권한 획득
-   (S-5 · T1552.005)                  └─ PassRole이 CreateFunction에 포함 (S-6 · T1548)
-```
-
-| 단계 | ATT&CK | 탐지 |
-|---|---|---|
-| IMDS 자격증명 탈취 | T1552.005 | GuardDuty `InstanceCredentialExfiltration`, CloudTrail |
-| IAM 남용 · 권한상승 | T1078.004 · T1548 | CloudTrail → Wazuh 100300 · 100301 |
+<!-- ✍️ 키워드: IMDS 자격증명 탈취 (S-5 · T1552.005) · 정찰 · PassRole + CreateFunction (S-6 · T1548) · Invoke · Capital One 2019
+     참고: 노션 '권한상승 확인', 설계문서 6.1 -->
 
 ## 사전 세팅 (취약 정책 부착)
 
-| 항목 | 값 |
-|---|---|
-| 탈취 대상 역할 | `web-alb-demo-ssm-role` (원래 `AmazonSSMManagedInstanceCore`만) |
-| 훈련용 취약 권한 | `iam:PassRole` + `lambda:CreateFunction` · `InvokeFunction` (인라인 `vuln-privesc-demo`) |
-| 악용할 상위 역할 | `escalated-demo-role` (AdministratorAccess) |
-| 초기 셸 확보 | 웹 취약점 대신 SSM 접속으로 대체 |
-
-<!-- ✍️ 직접 작성 · 참고: 노션 '권한상승 시나리오 — 사전 세팅 세트' -->
+<!-- ✍️ 키워드: web-alb-demo-ssm-role (원래 최소권한) · vuln-privesc-demo · escalated-demo-role (Admin) · 초기 셸은 SSM으로 대체
+     참고: 노션 '권한상승 시나리오 — 사전 세팅 세트' -->
 
 ## 단계별 재현
 
-<!-- ✍️ 직접 작성 · 참고: 노션 '권한상승 확인 › 1. 자격증명 탈취 ~ PassRole 공격으로' -->
+<!-- ✍️ 키워드: IAM 열거 AccessDenied · PassRole 찔러보기 · whoami 결과
+     참고: 노션 '권한상승 확인 › 1 ~ PassRole 공격으로' -->
 
 ## 탐지 결과
 
-| 룰 | 결과 |
-|---|---|
-| 100300 (HIGH) | |
-| 100301 (CRITICAL) | ✅ `privesc-poc-6`에서 탐지 (2026-10-06) |
+<!-- ✍️ 키워드: 100300 HIGH · 100301 CRITICAL · privesc-poc-6
+     참고: 노션 '🛠️ 트러블슈팅' › 검증 -->
 
 ## 원복 절차
 
-```bash
-aws lambda delete-function --function-name privesc-poc --profile workload
-aws iam detach-role-policy --role-name escalated-demo-role \
-  --policy-arn arn:aws:iam::aws:policy/AdministratorAccess --profile workload
-aws iam delete-role-policy --role-name web-alb-demo-ssm-role \
-  --policy-name vuln-privesc-demo --profile workload
-```
-
-원복 명령은 실환경에서는 그대로 **대응 조치**가 됩니다 (R3 런북 5장).
-
-<!-- ✍️ 직접 작성 · 참고: 노션 '권한상승 시나리오 — 생성된 리소스 정리 (2026-10-03)' -->
+<!-- ✍️ 키워드: Lambda 삭제 · Admin 정책 분리 · 취약 정책 삭제 · 원복 = 실환경 대응 조치
+     참고: 노션 '권한상승 시나리오 — 생성된 리소스 정리 (10/03)' -->
 
 ## 의사결정 기록
 
-| 결정 | 대안 | 이유 |
-|---|---|---|
-| 취약 권한을 의도적으로 부착 | 최소권한 유지 ("권한상승 불가"로 결론) | |
-| PassRole + Lambda 생성 경로 | `AttachRolePolicy`, `CreateAccessKey` | |
-
-<!-- ✍️ 직접 작성 · 참고: 노션 '의사결정 로그 — 권한상승 시나리오 설계 (2026-10-03)' -->
+<!-- ✍️ 키워드: 최소권한 확인 → ①안 확정 · PassRole vs AttachRolePolicy vs CreateAccessKey · B줄기 구축 정당화
+     참고: 노션 '의사결정 로그 — 권한상승 시나리오 설계 (10/03)' -->
 
 ---
 [← 메인으로](/README.md)
