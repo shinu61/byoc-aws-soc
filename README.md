@@ -67,29 +67,32 @@
 
 ### 런북 분류
 
-| 런북 | 대상 | 대응 방식 |
-|---|---|---|
-| **R1** | MEDIUM 이하 | <!-- TODO --> |
-| **R2** | 웹 공격 (SQLi · Brute Force) | <!-- TODO --> |
-| **R3** 🙋 | IAM 자격증명 · 권한상승 | <!-- TODO --> |
-| **R4** | EC2 워크로드 (웹셸 · 백도어) | <!-- TODO --> |
-| **R5** | 데이터 유출 | <!-- TODO --> |
-| **R6** | 미분류 Finding | <!-- TODO --> |
-| **R7** | <!-- TODO --> | <!-- TODO --> |
+Finding은 **심각도로 먼저** 나누고(MEDIUM 이하 → R1), HIGH 이상은 **ATT&CK 전술(category)** 에 따라 R2~R6로 보냅니다.
+
+| 런북 | 대상 | 분류 조건 | 대응 방식 |
+|---|---|---|---|
+| **R1** | 조사 · 티켓 | 심각도 MEDIUM · LOW · INFORMATIONAL | MEDIUM은 Jira 티켓 발행 + Discord 알림, LOW · INFO는 기록 |
+| **R2** | 웹 진입 · 탐색 | Initial Access · Reconnaissance | HIGH는 승인 후 WAF IP 차단, CRITICAL은 자동 차단 |
+| **R3** 🙋 | IAM 자격증명 · 권한상승 | Credential Access · `AwsIamAccessKey` | 명시적 Deny로 역할 세션 무효화, 공격 리소스 삭제, 취약 권한 회수 |
+| **R4** | 침해 워크로드 | Command and Control (+ TorClient 등 지정 유형) | Discord 승인 후 격리 SG 교체, TCP DoS는 SG · NACL · IAM 격리 |
+| **R5** | 데이터 · 서비스 | Exfiltration · Impact | 승인 분기 후 판단 결과 기록 (승인 · 오탐 · 허용 활동) |
+| **R6** | 미분류 | 위 조건에 맞지 않는 Finding | 원문 보존, 수동 재분류, 분류 규칙 보완 |
 
 ### 시나리오 검증 결과
 
-| # | 공격 | 탐지원 | 런북 | 결과 |
-|---|---|---|---|---|
-| S-1 | 정찰 (포트스캔 · 디렉터리 스캔) | | | |
-| S-2 | Brute Force | | | |
-| S-3 | SQLi · XSS | | | |
-| S-4 | 웹셸 | | | |
-| S-5 | C2 | | | |
-| S-6 🙋 | IAM 권한상승 | | R3 | |
-| S-7 | 데이터 유출 | | | |
-| S-8 | 채굴 | | | |
-| S-9 | TCP DoS | | | |
+| # | 공격 | ATT&CK | 탐지 | 런북 | 결과 |
+|---|---|---|---|---|---|
+| S-1 | 정찰 (포트스캔 · 디렉터리 스캔) | T1595 · T1046 | Suricata → Wazuh 100113, Wazuh 31151 | R1 | ✅ 탐지 · 기록 |
+| S-2 | SQLi · XSS | T1190 | Wazuh 100120 (HIGH), 100131 (CRITICAL) | R2 | ✅ CRITICAL 자동 차단, 차단 후 재공격 20회 모두 403 |
+| S-3 | 웹셸 업로드 · 실행 | T1505.003 | Wazuh FIM 100110~100112, auditd 100220 | R6 → R4 | ✅ HIGH 알림 · 대응 Lambda 실행 |
+| S-4 | 리버스셸 · C2 | T1071 · T1571 | GuardDuty `C&CActivity.B!DNS` | R4 | ✅ 탐지 |
+| S-5 🙋 | IMDS 자격증명 탈취 | T1552.005 | GuardDuty, CloudTrail | R3 | ✅ 탈취 키 사용이 CloudTrail에 기록 → S-6 룰로 탐지 |
+| S-6 🙋 | IAM 권한상승 (PassRole + Lambda) | T1078.004 · T1548 | CloudTrail → Wazuh 100300 · 100301 (CRITICAL) | R3 | ✅ 탐지 · R3 분기 · IAM 격리 |
+| S-7 | 데이터 유출 | T1567 · T1048 | GuardDuty `DNSDataExfiltration` | R5 | 🧪 샘플 Finding으로 분기 · 판단 기록 검증 |
+| S-8 | 암호화폐 채굴 | T1496 | GuardDuty `BitcoinTool.B` | R4 | ✅ Discord 승인 → 격리 SG 교체 |
+| S-9 | 내부 TCP SYN DoS | — | Suricata → Wazuh 100114 | R4 | ✅ SG · NACL 격리와 복구 확인 (테스트 상태 머신) |
+
+<sub>✅ 실제 공격 재현(E2E) · 🧪 샘플 데이터 단위 검증</sub>
 
 <br>
 
@@ -122,7 +125,7 @@ byoc-aws-soc/
 ├── response/
 │   ├── stepfunctions/         대응 워크플로 정의
 │   ├── lambda/                대응 Lambda
-│   └── runbooks/              런북 (R1 ~ R7)
+│   └── runbooks/              런북 (R1 ~ R6)
 ├── attack-sim/
 │   └── privesc/               🙋 IAM 권한상승 재현
 └── reports/                   🙋 사고 분석 보고서
