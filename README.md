@@ -85,12 +85,12 @@ Finding은 **심각도로 먼저** 나누고(MEDIUM 이하 → R1), HIGH 이상�
 | S-1 | 정찰 (포트스캔 · 디렉터리 스캔) | T1595 · T1046 | Suricata → Wazuh 100113, Wazuh 31151 | R1 | ✅ 탐지 · 기록 |
 | S-2 | SQLi · XSS | T1190 | Wazuh 100120 (HIGH), 100131 (CRITICAL) | R2 | ✅ CRITICAL 자동 차단, 차단 후 재공격 20회 모두 403 |
 | S-3 | 웹셸 업로드 · 실행 | T1505.003 | Wazuh FIM 100110~100112, auditd 100220 | R6 → R4 | ✅ HIGH 알림 · 대응 Lambda 실행 |
-| S-4 | 리버스셸 · C2 | T1071 · T1571 | GuardDuty `C&CActivity.B!DNS` | R4 | ✅ 탐지 |
+| S-4 | 리버스셸 · C2 | T1071 · T1571 | GuardDuty `C&CActivity.B!DNS` | R4 | ✅ 승인 후 EC2 격리 |
 | S-5 🙋 | IMDS 자격증명 탈취 | T1552.005 | GuardDuty, CloudTrail | R3 | ✅ 탈취 키 사용이 CloudTrail에 기록 → S-6 룰로 탐지 |
 | S-6 🙋 | IAM 권한상승 (PassRole + Lambda) | T1078.004 · T1548 | CloudTrail → Wazuh 100300 · 100301 (CRITICAL) | R3 | ✅ 탐지 · R3 분기 · IAM 격리 |
 | S-7 | 데이터 유출 | T1567 · T1048 | GuardDuty `DNSDataExfiltration` | R5 | 🧪 샘플 Finding으로 분기 · 판단 기록 검증 |
 | S-8 | 암호화폐 채굴 | T1496 | GuardDuty `BitcoinTool.B` | R4 | ✅ Discord 승인 → 격리 SG 교체 |
-| S-9 | 내부 TCP SYN DoS | — | Suricata → Wazuh 100114 | R4 | ✅ SG · NACL 격리와 복구 확인 (테스트 상태 머신) |
+| S-9 | 내부 TCP SYN DoS | T1499.001 | Suricata → Wazuh 100114 | R4 | ✅ SG · NACL 격리와 복구 확인 (테스트 상태 머신) |
 
 <sub>✅ 실제 공격 재현(E2E) · 🧪 샘플 데이터 단위 검증</sub>
 
